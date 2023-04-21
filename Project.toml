@@ -1,0 +1,13 @@
+name = "GLMMng"
+uuid = "7db52ce6-6aec-433a-8ba6-cae1516dfb77"
+authors = ["Douglas Bates <dmbates@gmail.com> and contributors"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.8"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
