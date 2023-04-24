@@ -43,6 +43,20 @@ function SingleScalar(
     return updatetbl!(SingleScalar{typeof(DL),T,S}(X, θβ, ytbl, utbl, irls.rtbl))
 end
 
+function fit(
+    ::Type{GLMMmod},
+    f::FormulaTerm,
+    d,
+    DL::DistLink,
+    refs::Vector{S};
+    contrasts::Dict{Symbol}=Dict{Symbol,Any}(),
+    kwargs...,
+) where {S<:Integer}
+    fsch = apply_schema(f, schema(f, d, contrasts))
+    resp, pred = modelcols(fsch, d)
+    return fit!(SingleScalar(DL, pred, vec(resp), refs); kwargs...)
+end
+
 function updatetbl!(m::SingleScalar{DL}) where {DL}
     (; refs, y, η, offset) = m.ytbl
     u = m.utbl.u
@@ -50,7 +64,7 @@ function updatetbl!(m::SingleScalar{DL}) where {DL}
     # evaluate η = offset + ZΛu where Λ is θ * I and Z is one-hot
     fill!(η, 0)
     @inbounds for i in eachindex(η, refs, offset)
-        η[i] += offset[i] + u[refs[i]] * θ
+        η[i] += muladd(θ, u[refs[i]], offset[i])
     end
     rtbl = m.rtbl
     @inbounds Threads.@threads for i in eachindex(rtbl, y, η, offset)
@@ -61,10 +75,10 @@ end
 
 function updateu!(m::SingleScalar)
     (; u, u0, Ldiag) = m.utbl
-    copyto!(u0, u)              # keep a copy of u
-    θ = first(m.θβ)             # extract the scalar θ
+    copyto!(u0, u)                # keep a copy of u
+    θ = first(m.θβ)               # extract the scalar θ
     fill!(u, 0)
-    if iszero(θ)                # skip the update if θ == 0
+    if iszero(θ)                  # skip the update if θ == 0
         fill!(Ldiag, 1)           # L is the identity if θ == 0
         return updatetbl!(m)
     end
@@ -74,34 +88,34 @@ function updateu!(m::SingleScalar)
         Ldiag[ri] += abs2(rtWΛ)   # accumulate Λ'Z'WZΛ
         u[ri] += rtWΛ * ti.wwresp # accumulate Λ'Z'Wỹ
     end
-    Ldiag .+= 1                 # form diagonal of Λ'Z'WZΛ + I = LL'
-    u ./= Ldiag                 # solve for u with diagonal LL'
-    return updatetbl!(m)        # and update η and rtbl
+    Ldiag .+= 1                   # form diagonal of Λ'Z'WZΛ + I = LL'
+    u ./= Ldiag                   # solve for u with diagonal LL'
+    return updatetbl!(m)          # and update η and rtbl
 end
 
 function pirls!(m::SingleScalar; verbose::Bool=false)
     (; u, u0, Ldiag) = m.utbl
-    fill!(u, 0)                  # start from u == 0
-    copyto!(u0, u)               # keep a copy of u
+    fill!(u, 0)                   # start from u == 0
+    copyto!(u0, u)                # keep a copy of u
     oldpdev = pdeviance(updatetbl!(m))
     verbose && @info 0, oldpdev
-    for i in 1:10                # maximum of 10 PIRLS iterations
+    for i in 1:10                 # maximum of 10 PIRLS iterations
         newpdev = pdeviance(updateu!(m))
         verbose && @info i, newpdev
-        if newpdev > oldpdev       # PIRLS iteration failed
+        if newpdev > oldpdev      # PIRLS iteration failed
             @warn "PIRLS iteration did not reduce penalized deviance"
-            copyto!(u, u0)           # restore previous u
-            updatetbl!(m)            # restore η and rtbl
+            copyto!(u, u0)        # restore previous u
+            updatetbl!(m)         # restore η and rtbl
             break
         elseif (oldpdev - newpdev) < (1.0e-8 * oldpdev)
-            copyto!(u0, u)           # keep a copy of u
+            copyto!(u0, u)        # keep a copy of u
             break
         else
-            copyto!(u0, u)           # keep a copy of u
+            copyto!(u0, u)        # keep a copy of u
             oldpdev = newpdev
         end
     end
-    map!(sqrt, Ldiag, Ldiag)     # replace diag(LL') by diag(L)
+    map!(sqrt, Ldiag, Ldiag)      # replace diag(LL') by diag(L)
     return m
 end
 
@@ -123,11 +137,11 @@ end
 function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
     (; ytbl, utbl, rtbl) = m
     (; u, u0, Ldiag, pdev, pdev0, aGHQ) = utbl
-    pdevcomps!(pirls!(m))  # ensure that u0 and pdev0 are current
+    pdevcomps!(pirls!(m))   # ensure that u0 and pdev0 are current
     copyto!(pdev0, pdev)
     fill!(aGHQ, 0)
     for (z, w) in GHnorm(nGHQ)
-        if iszero(z)       # exp term is one when z == 0
+        if iszero(z)        # exp term is one when z == 0
             aGHQ .+= w
         else
             u .= u0 .+ z ./ Ldiag
@@ -135,7 +149,7 @@ function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
             aGHQ .+= w .* exp.((abs2(z) .+ pdev0 .- pdev) ./ 2)
         end
     end
-    map!(log, aGHQ, aGHQ)  # log.(aGHQ) in place
+    map!(log, aGHQ, aGHQ)   # log.(aGHQ) in place
     aGHQ .*= -2
     return m
 end
@@ -143,7 +157,7 @@ end
 function StatsAPI.fit!(m::SingleScalar; nGHQ::Integer=11)
     (; pdev0, aGHQ) = m.utbl
     θβ = m.θβ
-    pp1 = length(θβ)                # length(β) = p and length(θ) = 1
+    pp1 = length(θβ)        # length(β) = p and length(θ) = 1
     opt = Opt(:LN_BOBYQA, pp1)
     mβ = view(θβ, 2:pp1)
     function obj(x, g)
@@ -156,8 +170,8 @@ function StatsAPI.fit!(m::SingleScalar; nGHQ::Integer=11)
         return sum(pdev0) + sum(aGHQ) + logdet(m)
     end
     opt.min_objective = obj
-    lb = fill!(similar(θβ), -Inf)   # vector of lower bounds
-    lb[1] = 0                       # scalar θ must be non-negative
+    lb = fill!(similar(θβ), -Inf) # vector of lower bounds
+    lb[1] = 0               # scalar θ must be non-negative
     NLopt.lower_bounds!(opt, lb)
     minf, minx, ret = optimize(opt, copy(θβ))
     @info (; ret, fevals=opt.numevals, minf)

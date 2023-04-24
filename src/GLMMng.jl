@@ -19,6 +19,7 @@ include("irls.jl")
 
 export DistLink,
     GLM,
+    GLMMmod,
     GHnorm,
     BernoulliLogit,
     PoissonLog,

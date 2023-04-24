@@ -26,10 +26,9 @@ Return a `k`-vector of abscissae and weights for normalized Gauss-Hermite quadra
 The function values are stored (memoized) when first evaluated.  Subsequent evaluations
 for the same `k` have very low overhead.
 """
-function GHnorm(k::Int)
+function GHnorm(k::Integer)
     return get!(GHnormd, k) do
         GaussHermiteNormalized(k)
     end
 end
 
-GHnorm(k) = GHnorm(Int(k))

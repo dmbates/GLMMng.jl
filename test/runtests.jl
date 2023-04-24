@@ -6,12 +6,20 @@ using Test
 import DataAPI
 
 const datadir = joinpath(@__DIR__, "..", "data")
-dataset(nm::AbstractString) = Arrow.Table(joinpath(datadir, string(nm, ".arrow")))
-dataset(nm::Symbol) = dataset(string(nm))
+dataset(nm::Symbol) = Arrow.Table(joinpath(datadir, string(nm, ".arrow")))
+const datadict = Dict{Symbol,Arrow.Table}(
+    :admit => dataset(:admit),
+    :contra => dataset(:contra),
+)
+
+const contrasts = Dict{Symbol,Any}(
+    :ch => HelmertCoding(),
+    :rank => HelmertCoding(),
+    :urban => HelmertCoding(),
+)
 
 @testset "GLMBernoulli" begin
-    admit = dataset(:admit)
-    contrasts = Dict{Symbol,Any}(:rank => HelmertCoding())
+    admit = datadict[:admit]
     verbose = false
     f = @formula(admit ~ 1 + gre + gpa + rank)
     m1 = fit(GLM, f, admit, BernoulliLogit(); contrasts, verbose)
@@ -28,12 +36,10 @@ dataset(nm::Symbol) = dataset(string(nm))
 end
 
 @testset "SingleScalar" begin
-    contra = dataset(:contra)
-    f = @formula use ~ 1 + urban + ch + age + abs2(age)
-    contrasts = Dict{Symbol,Any}(:ch => HelmertCoding())
+    contra = datadict[:contra]
+    f = @formula use ~ 1 + urban + ch * age + abs2(age)
     fsch = apply_schema(f, schema(f, contra, contrasts))
     resp, pred = modelcols(fsch, contra)
-    @info typeof(resp)
     m1 = SingleScalar(
         BernoulliLogit(),
         pred,
@@ -41,12 +47,19 @@ end
         DataAPI.refarray(contra.disturbn),
     )
     @test isone(first(m1.θβ))
-    @test pdeviance(m1) ≈ 2417.864449812198
-    @test pdeviance(GLMMng.updateu!(m1)) ≈ 2239.8473723836723
-    @test pdeviance(GLMMng.pirls!(m1)) ≈ 2238.311233456473
-    @test laplaceapprox(m1) ≈ 2380.586408514556
+    @test pdeviance(m1) ≈ 2409.3774281600195
+    @test pdeviance(GLMMng.updateu!(m1)) ≈ 2233.1209476972153
+    @test pdeviance(GLMMng.pirls!(m1)) ≈ 2231.600219456821
+    @test laplaceapprox(m1) ≈ 2373.5180529828467
     fit!(m1)
     @info laplaceapprox(m1), sum(m1.utbl.aGHQ)
+end
+
+@testset "SSformula" begin
+    d = datadict[:contra]
+    f = @formula use ~ 1 + urban + ch * age + abs2(age)
+    m1 = fit(GLMMmod, f, d, BernoulliLogit(), DataAPI.refarray(d.disturbn); contrasts)
+    @test m1 isa SingleScalar
 end
 
 @testset "GHnorm" begin
