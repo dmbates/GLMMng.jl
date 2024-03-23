@@ -11,38 +11,51 @@ struct PoissonLog <: PoissonLink end
 dist(::Union{DL,Type{DL}}) where {DL<:BernoulliLink} = Bernoulli()
 dist(::Union{DL,Type{DL}}) where {DL<:PoissonLink} = Poisson()
 
+_dispersion_parameter(::Bernoulli) = false
+_dispersion_parameter(::Poisson) = false
+_dispersion_parameter(dl::DistLink) = _dispersion_parameter(dist(dl))
+
 function etastart(::Union{DL,Type{DL}}, y::T) where {DL<:BernoulliLink,T<:AbstractFloat}
     lthree = log(T(3))
     return ifelse(iszero(y), -lthree, lthree)
 end
 
 """
-    tblrow(::DistLink, y, η, offset=0)
+    updatetbl!(tbl::MatrixTable, ::Union{BernoulliLogit,Type{BernoulliLogit})
 
-Return a `NamedTuple` of `μ`, `dev`, `rtwwt`, `wwres`, `wwresp` from scalar `y`, `η`, and `offset`
+Update the `μ`, `dev`, `rtwwt`, `wwresp` columns in `tbl`
 """
-@inline function tblrow(
+function updatetbl!(
+    tbl::MatrixTable{Matrix{T}},
     ::Union{BernoulliLogit,Type{BernoulliLogit}},
-    y::T,
-    η::T,
-    offset::T=zero(T)
 ) where {T<:AbstractFloat}
-    rtexpmη = exp(-η / 2)      # square root of exp(-η)
-    expmη = abs2(rtexpmη)      # exp(-η)
-    denom = 1 + expmη
-    μ = inv(denom)
-    dev = 2 * ((1 - y) * η + log1p(expmη))
-    rtwwt = rtexpmη / denom    # sqrt of working wt
-    wwres = (y - μ) / rtwwt    # weighted working resid
-    wwresp = wwres + rtwwt * (η - offset)
-    return (; μ, dev, rtwwt, wwres, wwresp)
+    (; y, offset, η, μ, dev, rtwwt, wwresp) = tbl
+    @inbounds for i in axes(y, 1)
+        ηi = η[i]
+        yi = y[i]
+        rtexpmη = exp(-ηi / 2)           # square root of exp(-ηi)
+        expmη = abs2(rtexpmη)            # exp(-ηi)
+        denom = one(T) + expmη
+        μ[i] = μi = inv(denom)
+        dev[i] = 2 * ((one(T) - yi) * ηi + log1p(expmη))
+        rtwwt[i] = rtwwti = rtexpmη * μi # sqrt of working wt
+        wwres = (yi - μi) / rtwwti       # weighted working resid
+        wwresp[i] = wwres + rtwwti * (ηi - offset[i])
+    end
+    return tbl
 end
 
-function tblrow(::PoissonLog, y::T, η::T, offset::T=zero(T)) where {T<:AbstractFloat}
-    μ = exp(η)
-    dev = 2 * (xlogy(y, y / μ) - (y - μ))
-    rtwwt = one(T)   # placeholder - need to check the actual value
-    wwres = (y - μ) / rtwwt
-    wwresp = wwres + rtwwt * (η - offset)
-    return (; μ, dev, rtwwt, wwres, wwresp)
+function updatetbl!(tbl::MatrixTable{Matrix{T}},
+    ::Union{PoissonLog,Type{PoissonLog}},
+) where {T<:AbstractFloat}
+    (; y, offset, η, μ, dev, rtwwt, wwresp) = tbl
+    @inbounds for i in axes(y, 1)
+        ηi = η[i]
+        yi = y[i]
+        μ[i] = μi = exp(η)
+        dev[i] = 2 * (xlogy(yi, yi / μi) - (yi - μi))
+        rtwwt[i] = rtwwti = one(T)   # placeholder - need to check the actual value
+        wwresp = (yi - μi) / rtwwti + rtwwti * (ηi - offset[i])
+    end
+    return tbl
 end

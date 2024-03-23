@@ -1,33 +1,58 @@
 module GLMMng
 
-using Distributions
-using LinearAlgebra
-using NLopt
-using SparseArrays
-using StatsAPI
-using StatsModels
-using Tables
-using TypedTables
+import DataAPI: refarray, refpool
+using Distributions: Bernoulli, Chisq, Poisson, ccdf, insupport
+using LinearAlgebra: LinearAlgebra, Diagonal, SymTridiagonal, UpperTriangular
+using LinearAlgebra: eigen, ldiv!, lmul!, logdet
+using LinearAlgebra: mul!, norm, normalize!, qr!
+using PRIMA: bobyqa, issuccess
+using SparseArrays: SparseArrays
+using StatsBase: StatsBase, CoefTable, aic, aicc, bic, coef, coeftable, deviance
+using StatsBase: dof, dof_residual, fit, fit!, isfitted, loglikelihood
+using StatsBase: meanresponse, nobs, response, stderror, vcov
+using StatsModels: StatsModels, FormulaTerm, HelmertCoding, EffectsCoding
+using StatsModels: coefnames, @formula
+using StatsModels: apply_schema, lrtest, modelcols, schema
+using Tables: MatrixTable, table
+using TypedTables: Table
 
-import StatsAPI: deviance, fit, fit!
-
-include("GLMMmod.jl")
-include("GaussHermite.jl")
 include("DistLink.jl")
-include("modeltypes.jl")
 include("irls.jl")
+include("GaussHermite.jl")
+include("GLMMmod.jl")
+include("modeltypes.jl")
 
 export DistLink,
-    GLM,
+    Glm,
     GLMMmod,
     GHnorm,
+    @formula,
     BernoulliLogit,
+    HelmertCoding,
+    EffectsCoding,
     PoissonLog,
     SingleScalar,
+    Table,
     deviance,
+    coef,
+    coeftable,
+    dof,
+    dof_residual,
     fit,
     fit!,
+    isfitted,
     laplaceapprox,
-    pdeviance
+    logdet,
+    loglikelihood,
+    lrtest,
+    meanresponse,
+    nobs,
+    response,
+    pdeviance,
+    stderror,
+    updatetbl!,
+    refarray,
+    refpool,
+    vcov
 
 end # module GLMMng
