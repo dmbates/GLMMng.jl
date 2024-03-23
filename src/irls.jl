@@ -1,78 +1,118 @@
-struct GLM{DL<:DistLink,T<:AbstractFloat}
-    X::Matrix{T}
-    Xqr::Matrix{T}                # copy of X used in the QR decomp
+struct Glm{DL<:DistLink,T<:AbstractFloat} <: StatsModels.RegressionModel
+    form::Union{Nothing,FormulaTerm}
+    X::AbstractMatrix{T}
+    Xqr::Matrix{T}                # copy of X used for the QR decomposition
+    tbl::MatrixTable{Matrix{T}}
+    Whalf::Diagonal{T}            # rtwwt as a Diagonal matrix
     β::Vector{T}
-    βcp::Vector{T}                # copy of previous β
-    Whalf::Diagonal{T,Vector{T}}  # rtwwt as a Diagonal matrix
-    ytbl::NamedTuple{(:y, :η),NTuple{2,Vector{T}}}
-    rtbl::Vector{
-        NamedTuple{(:μ, :dev, :rtwwt, :wwres, :wwresp),NTuple{5,T}}
-    }
+    βcp::Vector{T}
+    deviances::Vector{T}
 end
 
-function GLM(
+function Glm(
     DL::DistLink,
     X::AbstractMatrix{T},
-    y::AbstractVector{S}
-) where {T<:AbstractFloat,S}
+    y::AbstractVecOrMat,
+    form::Union{Nothing,FormulaTerm}=nothing,
+) where {T<:AbstractFloat}
     D = dist(DL)
     all(insupport(D, y)) || throw(ArgumentError("Invalid y values for $(typeof(D))"))
-    Tprime = promote_type(T, S)
-    X = collect(Tprime, X)
-    y = collect(Tprime, y)
-
-    n, p = size(X)
-    if length(y) ≠ n
-        throw(DimensionMismatch("length(y) = $(length(y)) ≠ $n = size(X, 1)"))
-    end
-    η = etastart.(DL, y)
-    Xqr = copy(X)
-    β = fill(-zero(T), p)
-    βcp = copy(β)
-    rtbl = tblrow.(DL, y, η)
-    Whalf = Diagonal([r.rtwwt for r in rtbl])
-    return GLM{typeof(DL),T}(X, Xqr, β, βcp, Whalf, (; y, η), rtbl)
+    Xqr = copyto!(Matrix{T}(undef, size(X)), X)
+    n = length(y)
+    n ≠ size(X, 1) && throw(DimensionMismatch("size(X, 1) = $(size(X, 1)) ≠ $n = length(y)"))
+    tbl = table(zeros(T, n, 7); header=(:y, :offset, :η, :μ, :dev, :rtwwt, :wwresp))
+    copyto!(tbl.y, y)
+    tbl.η .= etastart.(DL, tbl.y)
+    updatetbl!(tbl, DL)
+    Whalf = Diagonal(tbl.rtwwt)
+    β = qr!(lmul!(Whalf, Xqr)) \ tbl.wwresp 
+    mul!(tbl.η, X, β)
+    updatetbl!(tbl, DL)
+    return Glm{typeof(DL), T}(form, X, Xqr, tbl, Whalf, β, copy(β), T[])
 end
 
-deviance(glm::GLM) = sum(r.dev for r in glm.rtbl)
+"""
+    updateβ!(m::Glm)
 
-function updateβ!(m::GLM{DL}) where {DL}
-    (; X, Xqr, β, βcp, Whalf, ytbl, rtbl) = m  # destructure m & ytbl
-    (; y, η) = ytbl
+Utility function that saves the current `m.β` in `m.βcp` and evaluates a new `m.β` via weighted least squares.
+
+After evaluating a new `m.β`, `m.tbl` is updated
+"""
+function updateβ!(m::Glm{DL}) where {DL}
+    (; X, Xqr, β, βcp, Whalf, tbl) = m         # destructure m & ytbl
+    (; η, wwresp) = tbl
     copyto!(βcp, β)                            # keep a copy of β
-    copyto!(Whalf.diag, r.rtwwt for r in rtbl) # rtwwt -> Whalf
-    mul!(Xqr, Whalf, X)                        # weighted model matrix
-    copyto!(η, r.wwresp for r in rtbl)         # use η as temp storage
-    ldiv!(β, qr!(Xqr), η)                      # weighted least squares
-    rtbl .= tblrow.(DL, y, mul!(η, X, β))      # update η and rtbl
+    ldiv!(β, qr!(mul!(Xqr, Whalf, X)), wwresp) # weighted least squares
+    mul!(η, X, β)                              # evaluate linear predictor
+    updatetbl!(tbl, DL)                        # update the rest of tbl
     return m
 end
 
-function fit!(m::GLM{DL}, β₀=m.β; verbose::Bool=true) where {DL}
-    (; X, β, βcp, ytbl, rtbl) = m
-    (; y, η) = ytbl
-    rtbl .= tblrow.(DL, y, mul!(η, X, copyto!(β, β₀)))
-    olddev = deviance(m)
-    verbose && @info 0, olddev     # record the deviance at initial β
-    for i in 1:100                 # perform at most 100 iterations
-        newdev = deviance(updateβ!(m))
-        verbose && @info i, newdev # iteration number and deviance
-        if newdev > olddev
-            @warn "failure to decrease deviance"
-            copyto!(β, βcp)        # roll back changes to β, η, and rtbl
-            rtbl = tblrow.(DL, y, mul!(η, X, β))
-            break
-        elseif (olddev - newdev) < (1.0e-10 * olddev)
-            break                  # exit loop if deviance is stable
-        else
-            olddev = newdev
-        end
+function Base.getproperty(m::Glm, name::Symbol)
+    if name == :QR
+        return qr!(mul!(m.Xqr, m.Whalf, m.X))
+    else
+        return getfield(m, name)
     end
-    return m
 end
 
-function fit(
-    ::Type{GLM},
+function Base.propertynames(m::Glm)
+    return append!([:QR], fieldnames(typeof(m)))
+end
+
+function Base.show(io::IO, ::MIME"text/plain", m::Glm{DL,T}) where {DL,T}
+    if isempty(m.deviances)
+        @warn("Model has not been fit")
+        return nothing
+    end
+    println(io, "Generalized Linear Model fit by maximum likelihood")
+    println(io, "  ", m.form)
+    println(io, "  DistributionLink: ", DL)
+    println(io)
+    nums = Base.Ryu.writefixed.([loglikelihood(m), deviance(m), aic(m), aicc(m), bic(m)], 4)
+    fieldwd = max(maximum(textwidth.(nums)) + 1, 11)
+    for label in [" logLik", " deviance", "AIC", "AICc", "BIC"]
+        print(io, rpad(lpad(label, (fieldwd + textwidth(label)) >> 1), fieldwd))
+    end
+    println(io)
+    print.(Ref(io), lpad.(nums, fieldwd))
+    println(io)
+    println(io)
+    println(io, " Number of obs: ", nobs(m))
+
+    println(io, "\nCoefficients:")
+    return show(io, coeftable(m))
+end
+
+StatsBase.coef(m::Glm) = m.β
+
+function StatsBase.coeftable(m::Glm)
+    co = coef(m)
+    se = stderror(m)
+    z = co ./ se
+    pvalue = ccdf.(Chisq(1), abs2.(z))
+    p = length(z)
+    names = isnothing(m.form) ? string.('x', lpad.(1:p, ndigits(p), '0')) : coefnames(m.form.rhs)
+
+    return CoefTable(
+        hcat(co, se, z, pvalue),
+        ["Coef.", "Std. Error", "z", "Pr(>|z|)"],
+        names, 4, # pvalcol
+        3, # teststatcol
+    )
+end
+
+StatsBase.deviance(m::Glm) = sum(m.tbl.dev)
+
+StatsBase.dof(m::Glm) = size(m.X, 2)
+
+function StatsBase.dof_residual(m::Glm)
+    n, p = size(m.X)
+    return n - p
+end
+
+function StatsBase.fit(
+    ::Type{Glm},
     f::FormulaTerm,
     d,
     DL::DistLink;
@@ -81,5 +121,50 @@ function fit(
 )
     fsch = apply_schema(f, schema(f, d, contrasts))
     resp, pred = modelcols(fsch, d)
-    return fit!(GLM(DL, pred, resp); kwargs...)
+    return fit!(Glm(DL, pred, resp, fsch); kwargs...)
+end
+
+function StatsBase.fit!(m::Glm{DL}, β₀=m.β) where {DL}
+    (; X, β, βcp, tbl, deviances) = m
+    mul!(tbl.η, X, copyto!(β, β₀))
+    updatetbl!(tbl, DL)
+    olddev = deviance(m)
+    push!(empty!(deviances), olddev)
+    for i in 1:100                 # perform at most 100 iterations
+        newdev = deviance(updateβ!(m))
+        push!(deviances, newdev)
+        if newdev > olddev
+            @warn "failure to decrease deviance"
+            copyto!(β, βcp)        # roll back changes to β, η, and tbl
+            mul!(tbl.η, X, β)
+            updatetbl!(tbl, DL)
+            break
+        elseif (olddev - newdev) < (1.0e-10 * abs(olddev))
+            break                  # exit loop if deviance is stable
+        else
+            olddev = newdev
+            copyto!(βcp, β)
+        end
+    end
+    return m
+end
+
+StatsBase.isfitted(m::Glm) = !isempty(m.deviances)
+
+StatsBase.loglikelihood(m::Glm) = -deviance(m) / 2
+
+StatsBase.meanresponse(m::Glm) = sum(response(m)) / nobs(m)
+
+StatsBase.nobs(m::Glm) = size(m.X, 1)
+
+StatsBase.response(m::Glm) = m.tbl.y
+
+function StatsBase.stderror(m::Glm)
+    isempty(m.deviances) && throw(ArgumentError("model has not been fit"))
+    return norm.(eachrow(inv(m.QR.R)))
+end
+
+function StatsBase.vcov(m::Glm)
+    Rinv = inv(m.QR.R)
+    return Rinv * Rinv'
 end
