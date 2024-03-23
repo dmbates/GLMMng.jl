@@ -5,7 +5,7 @@ using Distributions: Bernoulli, Chisq, Poisson, ccdf, insupport
 using LinearAlgebra: LinearAlgebra, Diagonal, SymTridiagonal, UpperTriangular
 using LinearAlgebra: eigen, ldiv!, lmul!, logdet
 using LinearAlgebra: mul!, norm, normalize!, qr!
-using PRIMA: bobyqa, issuccess
+using PRIMA: Status, bobyqa
 using SparseArrays: SparseArrays
 using StatsBase: StatsBase, CoefTable, aic, aicc, bic, coef, coeftable, deviance
 using StatsBase: dof, dof_residual, fit, fit!, isfitted, loglikelihood

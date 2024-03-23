@@ -171,7 +171,9 @@ function StatsBase.fit!(m::SingleScalar; nGHQ::Integer=11)
         return obj
     end
     xmin, info = bobyqa(objective, copy(θβ); xl=lb, scale=abs.(θβ))
-    issuccess(info) || throw(error("bobyqa returned status $(info.status) after $(info.nf) evaluations"))
+    if info.status ≠ Status(0)
+        throw(error("bobyqa returned status $(info.status) after $(info.nf) evaluations"))
+    end
     objective(xmin)
     return m
 end
