@@ -10,7 +10,7 @@ using SparseArrays: SparseArrays
 using StatsBase: StatsBase, CoefTable, aic, aicc, bic, coef, coeftable, deviance
 using StatsBase: dof, dof_residual, fit, fit!, isfitted, loglikelihood
 using StatsBase: meanresponse, nobs, response, stderror, vcov
-using StatsModels: StatsModels, FormulaTerm, HelmertCoding, EffectsCoding
+using StatsModels: StatsModels, FormulaTerm, DummyCoding, HelmertCoding, EffectsCoding
 using StatsModels: coefnames, @formula
 using StatsModels: apply_schema, lrtest, modelcols, schema
 using Tables: MatrixTable, table
@@ -28,6 +28,7 @@ export DistLink,
     GHnorm,
     @formula,
     BernoulliLogit,
+    DummyCoding,
     HelmertCoding,
     EffectsCoding,
     PoissonLog,
