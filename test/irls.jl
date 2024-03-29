@@ -18,10 +18,11 @@
     @test coef(m1) === m1.β
     @test deviance(m1) == last(m1.deviances)
     @test length(m1.deviances) ≤ 5
-    @test nobs(m1) == length(m1.tbl.y)
+    @test nobs(m1) == length(m1.ytbl.y)
     @test loglikelihood(m1) == -deviance(m1) / 2
     @test length(response(m1)) == nobs(m1)
     @test response(m1) == admit.admit
+    @test :QR ∈ propertynames(m1)
 end
 
 @testset "contraGlm" begin

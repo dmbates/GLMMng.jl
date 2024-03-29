@@ -21,15 +21,15 @@ function etastart(::Union{DL,Type{DL}}, y::T) where {DL<:BernoulliLink,T<:Abstra
 end
 
 """
-    updatetbl!(tbl::MatrixTable, ::Union{BernoulliLogit,Type{BernoulliLogit})
+    updateytbl!(tbl::MatrixTable, ::Union{BernoulliLogit,Type{BernoulliLogit})
 
-Update the `μ`, `dev`, `rtwwt`, `wwresp` columns in `tbl`
+Update the `μ`, `dev`, `rtwwt`, `wwresp` columns in the `ytbl` (MatrixTable containing y)
 """
-function updatetbl!(
-    tbl::MatrixTable{Matrix{T}},
+function updateytbl!(
+    ytbl::MatrixTable{Matrix{T}},
     ::Union{BernoulliLogit,Type{BernoulliLogit}},
 ) where {T<:AbstractFloat}
-    (; y, offset, η, μ, dev, rtwwt, wwresp) = tbl
+    (; y, offset, η, μ, dev, rtwwt, wwresp) = ytbl
     @inbounds for i in axes(y, 1)
         ηi = η[i]
         yi = y[i]
@@ -42,20 +42,21 @@ function updatetbl!(
         wwres = (yi - μi) / rtwwti       # weighted working resid
         wwresp[i] = wwres + rtwwti * (ηi - offset[i])
     end
-    return tbl
+    return ytbl
 end
 
-function updatetbl!(tbl::MatrixTable{Matrix{T}},
+function updateytbl!(ytbl::MatrixTable{Matrix{T}},
     ::Union{PoissonLog,Type{PoissonLog}},
 ) where {T<:AbstractFloat}
-    (; y, offset, η, μ, dev, rtwwt, wwresp) = tbl
+    (; y, offset, η, μ, dev, rtwwt, wwresp) = ytbl
     @inbounds for i in axes(y, 1)
         ηi = η[i]
         yi = y[i]
-        μ[i] = μi = exp(η)
+        rtexpη = exp(ηi / 2)         # square root of exp(ηi)
+        μ[i] = μi = abs2(rtexpη)
         dev[i] = 2 * (xlogy(yi, yi / μi) - (yi - μi))
-        rtwwt[i] = rtwwti = one(T)   # placeholder - need to check the actual value
+        rtwwt[i] = rtwwti = rtexpη   # need to this
         wwresp = (yi - μi) / rtwwti + rtwwti * (ηi - offset[i])
     end
-    return tbl
+    return ytbl
 end

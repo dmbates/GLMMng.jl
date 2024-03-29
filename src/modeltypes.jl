@@ -2,7 +2,7 @@ struct SingleScalar{DL<:DistLink,T<:AbstractFloat,S<:Integer} <: GLMMmod{T}
     X::Matrix{T}
     θβ::Vector{T}
     refs::Vector{S}
-    tbl::MatrixTable{Matrix{T}}
+    ytbl::MatrixTable{Matrix{T}}
     utbl::MatrixTable{Matrix{T}}
     objectives::Vector{T}
 end
@@ -13,8 +13,8 @@ function SingleScalar(
         # use Glm to check args and obtain a starting β
     irls = updateβ!(updateβ!(updateβ!(Glm(DL, X, y))))
     θβ = append!(ones(T, 1), irls.β)     # initial θ = 1
-    tbl = irls.tbl
-    copyto!(tbl.offset, tbl.η)           # offset is fixed-effects contribution
+    ytbl = irls.ytbl
+    copyto!(ytbl.offset, ytbl.η)         # offset is fixed-effects contribution
 
     refs = collect(refs)
     if length(refs) ≠ (n = length(y)) 
@@ -28,11 +28,11 @@ function SingleScalar(
     end
 
     utbl = table(zeros(T, q, 6); header = (:u, :u0, :LLdiag, :pdev, :pdev0, :aGHQ))
-    return updateu!(SingleScalar{typeof(DL),T,S}(X, θβ, refs, irls.tbl, utbl, T[]))
+    return updateu!(SingleScalar{typeof(DL),T,S}(X, θβ, refs, irls.ytbl, utbl, T[]))
 end
 
 function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
-    (; tbl, utbl) = m
+    (; ytbl, utbl) = m
     (; u, u0, LLdiag, pdev, pdev0, aGHQ) = utbl
     pdevcomps!(pirls!(m))   # ensure that u0 and pdev0 are current
     copyto!(pdev0, pdev)
@@ -42,7 +42,7 @@ function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
             aGHQ .+= w
         else
             u .= u0 .+ z ./ sqrt.(LLdiag)
-            pdevcomps!(updatetbl!(m))
+            pdevcomps!(updateytbl!(m))
             aGHQ .+= w .* exp.((abs2(z) .+ pdev0 .- pdev) ./ 2)
         end
     end
@@ -57,7 +57,7 @@ end
 
 function pdevcomps!(m::SingleScalar)
     (; u, pdev) = m.utbl
-    dev = m.tbl.dev
+    dev = m.ytbl.dev
     pdev .= abs2.(u)        # initialize pdevj to square of uj
     @inbounds for (i, ri) in enumerate(m.refs)
         pdev[ri] += dev[i]
@@ -69,7 +69,7 @@ function pirls!(m::SingleScalar; verbose::Bool=false)
     (; u, u0, LLdiag) = m.utbl
     fill!(u, 0)                   # start from u == 0
     copyto!(u0, u)                # keep a copy of u
-    oldpdev = pdeviance(updatetbl!(m))
+    oldpdev = pdeviance(updateytbl!(m))
     verbose && @info 0, oldpdev
     for i in 1:10                 # maximum of 10 PIRLS iterations
         newpdev = pdeviance(updateu!(m))
@@ -77,7 +77,7 @@ function pirls!(m::SingleScalar; verbose::Bool=false)
         if newpdev > oldpdev      # PIRLS iteration failed
             @warn "PIRLS iteration did not reduce penalized deviance"
             copyto!(u, u0)        # restore previous u
-            updatetbl!(m)         # restore η and rtbl
+            updateytbl!(m)        # restore η and ytbl
             break
         elseif (oldpdev - newpdev) < (1.0e-8 * oldpdev)
             copyto!(u0, u)        # keep a copy of u
@@ -90,8 +90,8 @@ function pirls!(m::SingleScalar; verbose::Bool=false)
     return m
 end
 
-function updatetbl!(m::SingleScalar{DL}) where {DL}
-    (; y, η, offset) = m.tbl
+function updateytbl!(m::SingleScalar{DL}) where {DL}
+    (; y, η, offset) = m.ytbl
     refs = m.refs
     u = m.utbl.u
     θ = first(m.θβ)
@@ -100,14 +100,14 @@ function updatetbl!(m::SingleScalar{DL}) where {DL}
     @inbounds for i in axes(η, 1)
         η[i] += muladd(θ, u[refs[i]], offset[i])
     end
-    updatetbl!(m.tbl, DL)
+    updateytbl!(m.ytbl, DL)
     return m
 end
 
 function updateu!(m::SingleScalar)
-    (; refs, tbl, utbl) = m          # deconstruct m and utbl
+    (; refs, ytbl, utbl) = m         # deconstruct m and utbl
     (; u, u0, LLdiag) = utbl
-    (; rtwwt, wwresp) = tbl
+    (; rtwwt, wwresp) = ytbl
     copyto!(u0, u)                   # keep a copy of u
     θ = first(m.θβ)                  # extract the scalar θ
     fill!(u, 0)                      # start u at zero
@@ -123,7 +123,7 @@ function updateu!(m::SingleScalar)
         LLdiag .+= 1                 # form diagonal of Λ'Z'WZΛ + I = LL'
         u ./= LLdiag                 # solve for u with diagonal LL'
     end
-    return updatetbl!(m)             # and update η and tbl
+    return updateytbl!(m)            # and update η and ytbl
 end
 
 LinearAlgebra.logdet(m::SingleScalar) = sum(log, m.utbl.LLdiag)
@@ -152,7 +152,7 @@ function StatsBase.fit(
 ) where {S<:Integer}
     fsch = apply_schema(f, schema(f, d, contrasts))
     resp, pred = modelcols(fsch, d)
-    return fit!(SingleScalar(DL, pred, vec(resp), refs); kwargs...)
+    return fit!(SingleScalar(DL, pred, eltype(pred).(resp), refs); kwargs...)
 end
 
 function StatsBase.fit!(m::SingleScalar; nGHQ::Integer=11)
@@ -164,7 +164,7 @@ function StatsBase.fit!(m::SingleScalar; nGHQ::Integer=11)
     objs = m.objectives
     function objective(x)
         copyto!(θβ, x)
-        mul!(m.tbl.offset, m.X, mβ)
+        mul!(m.ytbl.offset, m.X, mβ)
         evalGHQ!(m; nGHQ)
         obj = sum(pdev0) + sum(aGHQ) + logdet(m)
         push!(objs, obj)
@@ -180,10 +180,8 @@ end
 
 StatsBase.isfitted(m::SingleScalar) = !isempty(m.objectives)
 
-#StatsBase.loglikelihood(m::) = -deviance(m) / 2
-
 StatsBase.meanresponse(m::GLMMmod) = sum(response(m)) / nobs(m)
 
 StatsBase.nobs(m::GLMMmod) = size(m.X, 1)
 
-StatsBase.response(m::GLMMmod) = m.tbl.y
+StatsBase.response(m::GLMMmod) = m.ytbl.y

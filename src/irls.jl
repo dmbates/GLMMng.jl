@@ -2,7 +2,7 @@ struct Glm{DL<:DistLink,T<:AbstractFloat} <: StatsModels.RegressionModel
     form::Union{Nothing,FormulaTerm}
     X::AbstractMatrix{T}
     Xqr::Matrix{T}                # copy of X used for the QR decomposition
-    tbl::MatrixTable{Matrix{T}}
+    ytbl::MatrixTable{Matrix{T}}
     Whalf::Diagonal{T}            # rtwwt as a Diagonal matrix
     β::Vector{T}
     βcp::Vector{T}
@@ -20,15 +20,15 @@ function Glm(
     Xqr = copyto!(Matrix{T}(undef, size(X)), X)
     n = length(y)
     n ≠ size(X, 1) && throw(DimensionMismatch("size(X, 1) = $(size(X, 1)) ≠ $n = length(y)"))
-    tbl = table(zeros(T, n, 7); header=(:y, :offset, :η, :μ, :dev, :rtwwt, :wwresp))
-    copyto!(tbl.y, y)
-    tbl.η .= etastart.(DL, tbl.y)
-    updatetbl!(tbl, DL)
-    Whalf = Diagonal(tbl.rtwwt)
-    β = qr!(lmul!(Whalf, Xqr)) \ tbl.wwresp 
-    mul!(tbl.η, X, β)
-    updatetbl!(tbl, DL)
-    return Glm{typeof(DL), T}(form, X, Xqr, tbl, Whalf, β, copy(β), T[])
+    ytbl = table(zeros(T, n, 7); header=(:y, :offset, :η, :μ, :dev, :rtwwt, :wwresp))
+    copyto!(ytbl.y, y)
+    ytbl.η .= etastart.(DL, ytbl.y)
+    updateytbl!(ytbl, DL)
+    Whalf = Diagonal(ytbl.rtwwt)
+    β = qr!(lmul!(Whalf, Xqr)) \ ytbl.wwresp 
+    mul!(ytbl.η, X, β)
+    updateytbl!(ytbl, DL)
+    return Glm{typeof(DL), T}(form, X, Xqr, ytbl, Whalf, β, copy(β), T[])
 end
 
 """
@@ -36,15 +36,15 @@ end
 
 Utility function that saves the current `m.β` in `m.βcp` and evaluates a new `m.β` via weighted least squares.
 
-After evaluating a new `m.β`, `m.tbl` is updated
+After evaluating a new `m.β`, `m.ytbl` is updated
 """
 function updateβ!(m::Glm{DL}) where {DL}
-    (; X, Xqr, β, βcp, Whalf, tbl) = m         # destructure m & ytbl
-    (; η, wwresp) = tbl
+    (; X, Xqr, β, βcp, Whalf, ytbl) = m        # destructure m & ytbl
+    (; η, wwresp) = ytbl
     copyto!(βcp, β)                            # keep a copy of β
     ldiv!(β, qr!(mul!(Xqr, Whalf, X)), wwresp) # weighted least squares
     mul!(η, X, β)                              # evaluate linear predictor
-    updatetbl!(tbl, DL)                        # update the rest of tbl
+    updateytbl!(ytbl, DL)                      # update the rest of ytbl
     return m
 end
 
@@ -60,7 +60,7 @@ function Base.propertynames(m::Glm)
     return append!([:QR], fieldnames(typeof(m)))
 end
 
-function Base.show(io::IO, ::MIME"text/plain", m::Glm{DL,T}) where {DL,T}
+function Base.show(io::IO, ::MIME"text/plain", m::Glm{DL}) where {DL}
     if isempty(m.deviances)
         @warn("Model has not been fit")
         return nothing
@@ -102,7 +102,7 @@ function StatsBase.coeftable(m::Glm)
     )
 end
 
-StatsBase.deviance(m::Glm) = sum(m.tbl.dev)
+StatsBase.deviance(m::Glm) = sum(m.ytbl.dev)
 
 StatsBase.dof(m::Glm) = size(m.X, 2)
 
@@ -125,9 +125,9 @@ function StatsBase.fit(
 end
 
 function StatsBase.fit!(m::Glm{DL}, β₀=m.β) where {DL}
-    (; X, β, βcp, tbl, deviances) = m
-    mul!(tbl.η, X, copyto!(β, β₀))
-    updatetbl!(tbl, DL)
+    (; X, β, βcp, ytbl, deviances) = m
+    mul!(ytbl.η, X, copyto!(β, β₀))
+    updateytbl!(ytbl, DL)
     olddev = deviance(m)
     push!(empty!(deviances), olddev)
     for i in 1:100                 # perform at most 100 iterations
@@ -135,9 +135,9 @@ function StatsBase.fit!(m::Glm{DL}, β₀=m.β) where {DL}
         push!(deviances, newdev)
         if newdev > olddev
             @warn "failure to decrease deviance"
-            copyto!(β, βcp)        # roll back changes to β, η, and tbl
-            mul!(tbl.η, X, β)
-            updatetbl!(tbl, DL)
+            copyto!(β, βcp)        # roll back changes to β, η, and ytbl
+            mul!(ytbl.η, X, β)
+            updateytbl!(ytbl, DL)
             break
         elseif (olddev - newdev) < (1.0e-10 * abs(olddev))
             break                  # exit loop if deviance is stable
@@ -157,7 +157,7 @@ StatsBase.meanresponse(m::Glm) = sum(response(m)) / nobs(m)
 
 StatsBase.nobs(m::Glm) = size(m.X, 1)
 
-StatsBase.response(m::Glm) = m.tbl.y
+StatsBase.response(m::Glm) = m.ytbl.y
 
 function StatsBase.stderror(m::Glm)
     isempty(m.deviances) && throw(ArgumentError("model has not been fit"))
