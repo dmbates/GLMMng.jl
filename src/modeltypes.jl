@@ -32,14 +32,14 @@ function SingleScalar(
 end
 
 function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
-    (; ytbl, utbl) = m
-    (; u, u0, LLdiag, pdev, pdev0, aGHQ) = utbl
+    (; u, u0, LLdiag, pdev, pdev0, aGHQ) = m.utbl
     pdevcomps!(pirls!(m))   # ensure that u0 and pdev0 are current
     copyto!(pdev0, pdev)
     fill!(aGHQ, 0)
-    for (z, w) in GHnorm(nGHQ)
+    for (z, w) in rows(GHnorm(nGHQ))
         if iszero(z)        # exp term is one when z == 0
             aGHQ .+= w
+            break
         else
             u .= u0 .+ z ./ sqrt.(LLdiag)
             pdevcomps!(updateytbl!(m))
@@ -66,7 +66,7 @@ function pdevcomps!(m::SingleScalar)
 end
 
 function pirls!(m::SingleScalar; verbose::Bool=false)
-    (; u, u0, LLdiag) = m.utbl
+    (; u, u0) = m.utbl
     fill!(u, 0)                   # start from u == 0
     copyto!(u0, u)                # keep a copy of u
     oldpdev = pdeviance(updateytbl!(m))

@@ -1,6 +1,7 @@
 module GLMMng
 
 import DataAPI: refarray, refpool
+using Arrow
 using Distributions: Bernoulli, Chisq, Poisson, ccdf, insupport
 using LinearAlgebra: LinearAlgebra, Diagonal, SymTridiagonal, UpperTriangular
 using LinearAlgebra: eigen, ldiv!, lmul!, logdet
@@ -10,10 +11,11 @@ using SparseArrays: SparseArrays
 using StatsBase: StatsBase, CoefTable, aic, aicc, bic, coef, coeftable, deviance
 using StatsBase: dof, dof_residual, fit, fit!, isfitted, loglikelihood
 using StatsBase: meanresponse, nobs, response, stderror, vcov
+using StatsFuns: xlogy
 using StatsModels: StatsModels, FormulaTerm, DummyCoding, HelmertCoding, EffectsCoding
 using StatsModels: coefnames, @formula
 using StatsModels: apply_schema, lrtest, modelcols, schema
-using Tables: MatrixTable, table
+using Tables: MatrixTable, rows, table
 using TypedTables: Table
 
 include("DistLink.jl")

@@ -20,6 +20,10 @@ function etastart(::Union{DL,Type{DL}}, y::T) where {DL<:BernoulliLink,T<:Abstra
     return ifelse(iszero(y), -lthree, lthree)
 end
 
+function etastart(::Union{DL,Type{DL}}, y::T) where {DL<:PoissonLink,T<:AbstractFloat}
+    return log(y + T(0.1))
+end
+
 """
     updateytbl!(tbl::MatrixTable, ::Union{BernoulliLogit,Type{BernoulliLogit})
 
@@ -55,8 +59,8 @@ function updateytbl!(ytbl::MatrixTable{Matrix{T}},
         rtexpη = exp(ηi / 2)         # square root of exp(ηi)
         μ[i] = μi = abs2(rtexpη)
         dev[i] = 2 * (xlogy(yi, yi / μi) - (yi - μi))
-        rtwwt[i] = rtwwti = rtexpη   # need to this
-        wwresp = (yi - μi) / rtwwti + rtwwti * (ηi - offset[i])
+        rtwwt[i] = rtwwti = rtexpη
+        wwresp[i] = (yi - μi) / rtwwti + rtwwti * (ηi - offset[i])
     end
     return ytbl
 end
