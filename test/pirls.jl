@@ -22,6 +22,13 @@
     @test deviance(m1) ≈ 2353.8241971081175
 end
 
+@testset "Goldstein" begin
+    d = datadict[:goldstein]
+    f = @formula y ~ 1
+    m1 = fit(GLMMmod, f, d, PoissonLog(), refarray(d.group))
+    @test m1 isa SingleScalar
+end
+
 @testset "SingleScalarGoldstein" begin
     goldstein = datadict[:goldstein]
     f = @formula y ~ 1
@@ -34,7 +41,7 @@ end
         refarray(goldstein.group),
     )
     @test isone(first(m1.θβ))
-    print(Table(m1.ytbl))
+    @test isa(fit!(m1; nGHQ=1), GLMMmod)
 end
 
 @testset "SSformula" begin
@@ -45,9 +52,29 @@ end
     @test deviance(m1) ≈ 2353.8241971081175
 end
 
-@testset "Goldstein" begin
-    d = datadict[:goldstein]
-    f = @formula y ~ 1
-    m1 = fit(GLMMmod, f, d, PoissonLog(), refarray(d.group))
+@testset "Lee" begin
+    lee = dataset(:Lee)
+    f = @formula(count ~ 1 + disease)
+    fsch = apply_schema(f, schema(f, lee, contrasts))
+    resp, pred = modelcols(fsch, lee)
+    m2 = SingleScalar(
+        PoissonLog(),
+        pred,
+        Vector{Float64}(resp),
+        refarray(lee.var"Sample ID")
+    )
+    @test m2 isa SingleScalar{PoissonLog}
+    fit!(m2; nGHQ=1)
+    @test isfitted(m2)
+    @test deviance(m2) ≈ 9873.398918968922
+    @test coef(m2) ≈ [-0.842079325164301, 0.17094447151188819, -0.19644985451485605]
+    @show length(m2.objectives)
+end
+
+@testset "Leeformula" begin
+    d = datadict[:lee]
+    f = @formula count ~ 1 + disease
+    m1 = fit(GLMMmod, f, d, PoissonLog(), refarray(d.var"Sample ID"))
     @test m1 isa SingleScalar
+#    @test dist(m1) isa Poisson
 end

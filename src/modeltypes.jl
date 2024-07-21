@@ -31,11 +31,20 @@ function SingleScalar(
     return updateu!(SingleScalar{typeof(DL),T,S}(X, θβ, refs, irls.ytbl, utbl, T[]))
 end
 
+"""
+    evalGHQ!(m::SingleScalar; n::Integer)
+
+Evaluate the `m.ytbl.aGHQ` using `n`'th-order normalized Gauss-Hermite Quadrature.
+
+As a special case, `n == 1` corresponds to Laplace's approximation and `m.ytbl.aGHQ` is zeros
+"""
 function evalGHQ!(m::SingleScalar; nGHQ::Integer=11)
     (; u, u0, LLdiag, pdev, pdev0, aGHQ) = m.utbl
+
     pdevcomps!(pirls!(m))   # ensure that u0 and pdev0 are current
     copyto!(pdev0, pdev)
-    fill!(aGHQ, 0)
+    fill!(aGHQ, false)
+    isone(nGHQ) && return m
     for (z, w) in rows(GHnorm(nGHQ))
         if iszero(z)        # exp term is one when z == 0
             aGHQ .+= w
@@ -58,14 +67,14 @@ end
 function pdevcomps!(m::SingleScalar)
     (; u, pdev) = m.utbl
     dev = m.ytbl.dev
-    pdev .= abs2.(u)        # initialize pdevj to square of uj
+    pdev .= abs2.(u)              # initialize pdevj to square of uj
     @inbounds for (i, ri) in enumerate(m.refs)
-        pdev[ri] += dev[i]
+        pdev[ri] += dev[i]        # add unit deviance for each i where refs[i] == ri
     end
     return m
 end
 
-function pirls!(m::SingleScalar; verbose::Bool=false)
+function pirls!(m::SingleScalar; verbose::Bool=false, delta::Real=1.0e-8)
     (; u, u0) = m.utbl
     fill!(u, 0)                   # start from u == 0
     copyto!(u0, u)                # keep a copy of u
@@ -74,12 +83,13 @@ function pirls!(m::SingleScalar; verbose::Bool=false)
     for i in 1:10                 # maximum of 10 PIRLS iterations
         newpdev = pdeviance(updateu!(m))
         verbose && @info i, newpdev
+        isfinite(newpdev) || throw(error("non-finite penalized deviance"))
         if newpdev > oldpdev      # PIRLS iteration failed
             @warn "PIRLS iteration did not reduce penalized deviance"
             copyto!(u, u0)        # restore previous u
             updateytbl!(m)        # restore η and ytbl
             break
-        elseif (oldpdev - newpdev) < (1.0e-8 * oldpdev)
+        elseif (oldpdev - newpdev) < (delta * oldpdev)
             copyto!(u0, u)        # keep a copy of u
             break
         else
@@ -96,16 +106,16 @@ function updateytbl!(m::SingleScalar{DL}) where {DL}
     u = m.utbl.u
     θ = first(m.θβ)
     # evaluate η = offset + ZΛu where Λ is θ * I and Z is one-hot
-    fill!(η, 0)
+    copyto!(η, offset)
     @inbounds for i in axes(η, 1)
-        η[i] += muladd(θ, u[refs[i]], offset[i])
+        η[i] += θ * u[refs[i]]
     end
     updateytbl!(m.ytbl, DL)
     return m
 end
 
 function updateu!(m::SingleScalar)
-    (; refs, ytbl, utbl) = m         # deconstruct m and utbl
+    (; refs, ytbl, utbl) = m         # deconstruct m, utbl, and ytbl
     (; u, u0, LLdiag) = utbl
     (; rtwwt, wwresp) = ytbl
     copyto!(u0, u)                   # keep a copy of u
@@ -124,6 +134,30 @@ function updateu!(m::SingleScalar)
         u ./= LLdiag                 # solve for u with diagonal LL'
     end
     return updateytbl!(m)            # and update η and ytbl
+end
+
+function Base.show(io::IO, ::MIME"text/plain", m::SingleScalar{DL}) where {DL}
+    if isempty(m.objectives)
+        @warn("Model has not been fit")
+        return nothing
+    end
+    println(io, "Single scalar Generalized Linear Mixed Model fit by maximum likelihood")
+    println(io, "  DistributionLink: ", DL)
+    println(io)
+    nums = Base.Ryu.writefixed.([loglikelihood(m), deviance(m), aic(m), aicc(m), bic(m)], 4)
+    fieldwd = max(maximum(textwidth.(nums)) + 1, 11)
+    for label in [" logLik", " deviance", "AIC", "AICc", "BIC"]
+        print(io, rpad(lpad(label, (fieldwd + textwidth(label)) >> 1), fieldwd))
+    end
+    println(io)
+    print.(Ref(io), lpad.(nums, fieldwd))
+    println(io)
+    println(" Standard deviation of scalar random effects: ", first(m.θβ))
+    println(io)
+    println(io, " Number of obs: ", nobs(m), ", levels of grouping factor: ", maximum(m.refs))
+
+    println(io, "\nCoefficients:")
+    return show(io, coef(m))
 end
 
 LinearAlgebra.logdet(m::SingleScalar) = sum(log, m.utbl.LLdiag)
@@ -179,6 +213,8 @@ function StatsBase.fit!(m::SingleScalar; nGHQ::Integer=11)
 end
 
 StatsBase.isfitted(m::SingleScalar) = !isempty(m.objectives)
+
+StatsBase.loglikelihood(m::GLMMmod) = -deviance(m) / 2
 
 StatsBase.meanresponse(m::GLMMmod) = sum(response(m)) / nobs(m)
 

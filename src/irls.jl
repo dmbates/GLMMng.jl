@@ -163,11 +163,12 @@ StatsBase.nobs(m::Glm) = size(m.X, 1)
 StatsBase.response(m::Glm) = m.ytbl.y
 
 function StatsBase.stderror(m::Glm)
-    isempty(m.deviances) && throw(ArgumentError("model has not been fit"))
+    isfitted(m) || throw(ArgumentError("model has not been fit"))
     return norm.(eachrow(inv(m.QR.R)))
 end
 
 function StatsBase.vcov(m::Glm)
+    isfitted(m) || throw(ArgumentError("model has not been fit"))
     Rinv = inv(m.QR.R)
     return Rinv * Rinv'
 end
