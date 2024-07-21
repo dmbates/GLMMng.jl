@@ -30,3 +30,18 @@ end
     m1 = fit(Glm, f, datadict[:contra], BernoulliLogit(); contrasts)
     @test m1 isa Glm{BernoulliLogit,Float64}
 end
+
+@testset "GoldsteinGlm" begin
+    d = datadict[:goldstein]
+    f = @formula y ~ 1   # mle should be mean(y)
+    m1 = fit(Glm, f, d, PoissonLog())
+    @test m1 isa Glm{PoissonLog,Float64}
+    @test only(m1.β) ≈ log(mean(d.y))
+end
+
+@testset "LeeGlm" begin
+    d = datadict[:lee]
+    f = @formula count ~ 1 + disease
+    m1 = fit(Glm, f, d, PoissonLog(); contrasts)
+    @test deviance(m1) ≈ 10885.650808948649
+end
