@@ -1,12 +1,12 @@
 struct Glm{DL<:DistLink,T<:AbstractFloat} <: StatsModels.RegressionModel
-    form::Union{Nothing,FormulaTerm}
-    X::AbstractMatrix{T}
-    Xqr::Matrix{T}                # copy of X used for the QR decomposition
-    ytbl::MatrixTable{Matrix{T}}
-    Whalf::Diagonal{T}            # rtwwt as a Diagonal matrix
-    β::Vector{T}
-    βcp::Vector{T}
-    deviances::Vector{T}
+    form::Union{Nothing,FormulaTerm}  # model formula (or nothing)
+    X::Matrix{T}                      # model matrix
+    Xqr::Matrix{T}                    # copy of X used for the QR decomposition
+    ytbl::MatrixTable{Matrix{T}}      # table of response, linear predictor, etc.
+    Whalf::Diagonal{T}                # rtwwt as a Diagonal matrix
+    β::Vector{T}                      # coefficient vector
+    βcp::Vector{T}                    # copy of previous coefficient vector
+    deviances::Vector{T}              # deviance at each iteration of IRLS
 end
 
 function Glm(
@@ -16,6 +16,7 @@ function Glm(
     form::Union{Nothing,FormulaTerm}=nothing,
 ) where {T<:AbstractFloat}
     D = dist(DL)
+    X = collect(X)
     all(insupport(D, y)) || throw(ArgumentError("Invalid y values for $(typeof(D))"))
     Xqr = copyto!(Matrix{T}(undef, size(X)), X)
     n = length(y)
