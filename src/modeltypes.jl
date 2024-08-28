@@ -10,24 +10,24 @@ end
 function SingleScalar(
     DL::DistLink, X::AbstractMatrix{T}, y::AbstractVecOrMat{T}, refs::AbstractVector{S}
 ) where {T<:AbstractFloat,S<:Integer}
-        # use Glm to check args and obtain a starting β
+    # use Glm to check args and obtain a starting β
     irls = updateβ!(updateβ!(updateβ!(Glm(DL, X, y))))
     θβ = append!(ones(T, 1), irls.β)     # initial θ = 1
     ytbl = irls.ytbl
     copyto!(ytbl.offset, ytbl.η)         # offset is fixed-effects contribution
 
     refs = collect(refs)
-    if length(refs) ≠ (n = length(y)) 
+    if length(refs) ≠ (n = length(y))
         throw(DimensionMismatch("length(y) = $n ≠ $(length(refs)) = length(refs)"))
     end
-        # refs should contain all values from 1 to maximum(refs)
+    # refs should contain all values from 1 to maximum(refs)
     refvals = sort!(unique(refs))
     q = length(refvals)
     if refvals ≠ 1:q
         throw(ArgumentError("sort!(unique(refs)) must be 1:$q"))
     end
 
-    utbl = table(zeros(T, q, 6); header = (:u, :u0, :LLdiag, :pdev, :pdev0, :aGHQ))
+    utbl = table(zeros(T, q, 6); header=(:u, :u0, :LLdiag, :pdev, :pdev0, :aGHQ))
     return updateu!(SingleScalar{typeof(DL),T,S}(X, θβ, refs, irls.ytbl, utbl, T[]))
 end
 
@@ -154,7 +154,9 @@ function Base.show(io::IO, ::MIME"text/plain", m::SingleScalar{DL}) where {DL}
     println(io)
     println(" Standard deviation of scalar random effects: ", first(m.θβ))
     println(io)
-    println(io, " Number of obs: ", nobs(m), ", levels of grouping factor: ", maximum(m.refs))
+    println(
+        io, " Number of obs: ", nobs(m), ", levels of grouping factor: ", maximum(m.refs)
+    )
 
     println(io, "\nCoefficients:")
     return show(io, coef(m))

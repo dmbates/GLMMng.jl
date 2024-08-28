@@ -23,9 +23,12 @@
 end
 
 @testset "Goldstein" begin
-    d = datadict[:goldstein]
+    d = DataFrame(datadict[:goldstein])
     f = @formula y ~ 1
-    m1 = fit(GLMMmod, f, d, PoissonLog(), refarray(d.group))
+    grp = refarray(d.group)
+    println(describe(d))
+    println(combine(groupby(d, :group), nrow, :y => mean))
+    m1 = fit(GLMMmod, f, d, PoissonLog(), grp)
     @test m1 isa SingleScalar
 end
 

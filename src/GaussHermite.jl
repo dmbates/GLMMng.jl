@@ -1,8 +1,8 @@
 const GHnormd = let header = (:z, :w)   # cache results in a Dict
-    Dict{Int, MatrixTable{Matrix{Float64}}}(
-        1 => table([0. 1.]; header),
+    Dict{Int,MatrixTable{Matrix{Float64}}}(
+        1 => table([0.0 1.0]; header),
         2 => table([-1.0 0.5; 1.0 0.5]; header),
-        3 => table([-sqrt(3) inv(6); sqrt(3) inv(6); 0. 2/3]; header)
+        3 => table([-sqrt(3) inv(6); sqrt(3) inv(6); 0.0 2/3]; header),
     )
 end
 
@@ -28,7 +28,6 @@ function GaussHermiteNormalized(k::Integer)
     return val
 end
 
-
 """
     GHnorm(k::Int)
 
@@ -42,4 +41,3 @@ function GHnorm(k::Integer)
         GaussHermiteNormalized(k)
     end
 end
-

@@ -1,4 +1,4 @@
-using Arrow, GLMMng, LinearAlgebra, StatsBase, StatsModels, Test, TypedTables
+using Arrow, DataFrames, GLMMng, LinearAlgebra, StatsBase, StatsModels, Test, TypedTables
 
 const datadir = joinpath(@__DIR__, "..", "data")
 dataset(nm::Symbol) = Arrow.Table(joinpath(datadir, string(nm, ".arrow")))

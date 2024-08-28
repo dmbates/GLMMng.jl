@@ -20,16 +20,17 @@ function Glm(
     all(insupport(D, y)) || throw(ArgumentError("Invalid y values for $(typeof(D))"))
     Xqr = copyto!(Matrix{T}(undef, size(X)), X)
     n = length(y)
-    n ≠ size(X, 1) && throw(DimensionMismatch("size(X, 1) = $(size(X, 1)) ≠ $n = length(y)"))
+    n ≠ size(X, 1) &&
+        throw(DimensionMismatch("size(X, 1) = $(size(X, 1)) ≠ $n = length(y)"))
     ytbl = table(zeros(T, n, 7); header=(:y, :offset, :η, :μ, :dev, :rtwwt, :wwresp))
     copyto!(ytbl.y, y)
     ytbl.η .= etastart.(DL, ytbl.y)
     updateytbl!(ytbl, DL)
     Whalf = Diagonal(ytbl.rtwwt)
-    β = qr!(lmul!(Whalf, Xqr)) \ ytbl.wwresp 
+    β = qr!(lmul!(Whalf, Xqr)) \ ytbl.wwresp
     mul!(ytbl.η, X, β)
     updateytbl!(ytbl, DL)
-    return Glm{typeof(DL), T}(form, X, Xqr, ytbl, Whalf, β, copy(β), T[])
+    return Glm{typeof(DL),T}(form, X, Xqr, ytbl, Whalf, β, copy(β), T[])
 end
 
 """
@@ -93,7 +94,11 @@ function StatsBase.coeftable(m::Glm)
     z = co ./ se
     pvalue = ccdf.(Chisq(1), abs2.(z))
     p = length(z)
-    names = isnothing(m.form) ? string.('x', lpad.(1:p, ndigits(p), '0')) : coefnames(m.form.rhs)
+    names = if isnothing(m.form)
+        string.('x', lpad.(1:p, ndigits(p), '0'))
+    else
+        coefnames(m.form.rhs)
+    end
     if names isa AbstractString
         names = [names]
     end
