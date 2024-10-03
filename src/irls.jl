@@ -1,7 +1,7 @@
 struct Glm{DL<:DistLink,T<:AbstractFloat} <: StatsModels.RegressionModel
     form::Union{Nothing,FormulaTerm}  # model formula (or nothing)
     X::Matrix{T}                      # model matrix
-    Xqr::Matrix{T}                    # copy of X used for the QR decomposition
+    Xqr::Matrix{T}                    # copy of X to be used for the QR decomposition
     ytbl::MatrixTable{Matrix{T}}      # table of response, linear predictor, etc.
     Whalf::Diagonal{T}                # rtwwt as a Diagonal matrix
     β::Vector{T}                      # coefficient vector
